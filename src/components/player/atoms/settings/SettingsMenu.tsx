@@ -6,16 +6,17 @@ import { Toggle } from "@/components/buttons/Toggle";
 import { Icon, Icons } from "@/components/Icon";
 import { useCaptions } from "@/components/player/hooks/useCaptions";
 import { Menu } from "@/components/player/internals/ContextMenu";
-import { getLanguageFromIETF } from "@/components/player/utils/language";
 import { useOverlayRouter } from "@/hooks/useOverlayRouter";
 import { usePlayerStore } from "@/stores/player/store";
 import { qualityToString } from "@/stores/player/utils/qualities";
 import { useSubtitleStore } from "@/stores/subtitles";
+import { getPrettyLanguageNameFromLocale } from "@/utils/language";
 
 export function SettingsMenu({ id }: { id: string }) {
   const { t } = useTranslation();
   const router = useOverlayRouter(id);
   const currentQuality = usePlayerStore((s) => s.currentQuality);
+  const currentAudioTrack = usePlayerStore((s) => s.currentAudioTrack);
   const selectedCaptionLanguage = usePlayerStore(
     (s) => s.caption.selected?.language,
   );
@@ -31,7 +32,12 @@ export function SettingsMenu({ id }: { id: string }) {
   const { toggleLastUsed } = useCaptions();
 
   const selectedLanguagePretty = selectedCaptionLanguage
-    ? getLanguageFromIETF(selectedCaptionLanguage) ??
+    ? getPrettyLanguageNameFromLocale(selectedCaptionLanguage) ??
+      t("player.menus.subtitles.unknownLanguage")
+    : undefined;
+
+  const selectedAudioLanguagePretty = currentAudioTrack
+    ? getPrettyLanguageNameFromLocale(currentAudioTrack.language) ??
       t("player.menus.subtitles.unknownLanguage")
     : undefined;
 
@@ -51,6 +57,15 @@ export function SettingsMenu({ id }: { id: string }) {
         >
           {t("player.menus.settings.qualityItem")}
         </Menu.ChevronLink>
+        {currentAudioTrack && (
+          <Menu.ChevronLink
+            onClick={() => router.navigate("/audio")}
+            rightText={selectedAudioLanguagePretty ?? undefined}
+          >
+            {t("player.menus.settings.audioItem")}
+          </Menu.ChevronLink>
+        )}
+
         <Menu.ChevronLink
           onClick={() => router.navigate("/source")}
           rightText={sourceName}

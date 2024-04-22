@@ -31,11 +31,12 @@ import { ThemePart } from "@/pages/parts/settings/ThemePart";
 import { PageTitle } from "@/pages/parts/util/PageTitle";
 import { AccountWithToken, useAuthStore } from "@/stores/auth";
 import { useLanguageStore } from "@/stores/language";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useSubtitleStore } from "@/stores/subtitles";
-import { useThemeStore } from "@/stores/theme";
+import { usePreviewThemeStore, useThemeStore } from "@/stores/theme";
 
 import { SubPageLayout } from "./layouts/SubPageLayout";
-import { LocalePart } from "./parts/settings/LocalePart";
+import { PreferencesPart } from "./parts/settings/PreferencesPart";
 
 function SettingsLayout(props: { children: React.ReactNode }) {
   const { isMobile } = useIsMobile();
@@ -69,6 +70,7 @@ export function AccountSettings(props: {
   const url = useBackendUrl();
   const { account } = props;
   const [sessionsResult, execSessions] = useAsyncFn(() => {
+    if (!url) return Promise.resolve([]);
     return getSessions(url, account);
   }, [account, url]);
   useEffect(() => {
@@ -102,6 +104,8 @@ export function SettingsPage() {
   const { t } = useTranslation();
   const activeTheme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
+  const previewTheme = usePreviewThemeStore((s) => s.previewTheme);
+  const setPreviewTheme = usePreviewThemeStore((s) => s.setPreviewTheme);
 
   const appLanguage = useLanguageStore((s) => s.language);
   const setAppLanguage = useLanguageStore((s) => s.setLanguage);
@@ -114,6 +118,12 @@ export function SettingsPage() {
 
   const backendUrlSetting = useAuthStore((s) => s.backendUrl);
   const setBackendUrl = useAuthStore((s) => s.setBackendUrl);
+
+  const enableThumbnails = usePreferencesStore((s) => s.enableThumbnails);
+  const setEnableThumbnails = usePreferencesStore((s) => s.setEnableThumbnails);
+
+  const enableAutoplay = usePreferencesStore((s) => s.enableAutoplay);
+  const setEnableAutoplay = usePreferencesStore((s) => s.setEnableAutoplay);
 
   const account = useAuthStore((s) => s.account);
   const updateProfile = useAuthStore((s) => s.setAccountProfile);
@@ -136,14 +146,40 @@ export function SettingsPage() {
     proxySet,
     backendUrlSetting,
     account?.profile,
+    enableThumbnails,
+    enableAutoplay,
+  );
+
+  useEffect(() => {
+    setPreviewTheme(activeTheme ?? "default");
+  }, [setPreviewTheme, activeTheme]);
+
+  useEffect(() => {
+    // Clear preview theme on unmount
+    return () => {
+      setPreviewTheme(null);
+    };
+  }, [setPreviewTheme]);
+
+  const setThemeWithPreview = useCallback(
+    (theme: string) => {
+      state.theme.set(theme === "default" ? null : theme);
+      setPreviewTheme(theme);
+    },
+    [state.theme, setPreviewTheme],
   );
 
   const saveChanges = useCallback(async () => {
-    if (account) {
-      if (state.appLanguage.changed || state.theme.changed) {
+    if (account && backendUrl) {
+      if (
+        state.appLanguage.changed ||
+        state.theme.changed ||
+        state.proxyUrls.changed
+      ) {
         await updateSettings(backendUrl, account, {
           applicationLanguage: state.appLanguage.state,
           applicationTheme: state.theme.state,
+          proxyUrls: state.proxyUrls.state?.filter((v) => v !== "") ?? null,
         });
       }
       if (state.deviceName.changed) {
@@ -163,10 +199,12 @@ export function SettingsPage() {
       }
     }
 
+    setEnableThumbnails(state.enableThumbnails.state);
+    setEnableAutoplay(state.enableAutoplay.state);
     setAppLanguage(state.appLanguage.state);
     setTheme(state.theme.state);
     setSubStyling(state.subtitleStyling.state);
-    setProxySet(state.proxyUrls.state);
+    setProxySet(state.proxyUrls.state?.filter((v) => v !== "") ?? null);
 
     if (state.profile.state) {
       updateProfile(state.profile.state);
@@ -175,20 +213,28 @@ export function SettingsPage() {
     // when backend url gets changed, log the user out first
     if (state.backendUrl.changed) {
       await logout();
-      setBackendUrl(state.backendUrl.state);
+
+      let url = state.backendUrl.state;
+      if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
+        url = `https://${url}`;
+      }
+
+      setBackendUrl(url);
     }
   }, [
-    state,
     account,
     backendUrl,
+    setEnableThumbnails,
+    state,
+    setEnableAutoplay,
     setAppLanguage,
     setTheme,
     setSubStyling,
+    setProxySet,
     updateDeviceName,
     updateProfile,
-    setProxySet,
-    setBackendUrl,
     logout,
+    setBackendUrl,
   ]);
   return (
     <SubPageLayout>
@@ -220,14 +266,22 @@ export function SettingsPage() {
             <RegisterCalloutPart />
           )}
         </div>
-        <div id="settings-locale" className="mt-48">
-          <LocalePart
+        <div id="settings-preferences" className="mt-48">
+          <PreferencesPart
             language={state.appLanguage.state}
             setLanguage={state.appLanguage.set}
+            enableThumbnails={state.enableThumbnails.state}
+            setEnableThumbnails={state.enableThumbnails.set}
+            enableAutoplay={state.enableAutoplay.state}
+            setEnableAutoplay={state.enableAutoplay.set}
           />
         </div>
         <div id="settings-appearance" className="mt-48">
-          <ThemePart active={state.theme.state} setTheme={state.theme.set} />
+          <ThemePart
+            active={previewTheme ?? "default"}
+            inUse={activeTheme ?? "default"}
+            setTheme={setThemeWithPreview}
+          />
         </div>
         <div id="settings-captions" className="mt-48">
           <CaptionsPart

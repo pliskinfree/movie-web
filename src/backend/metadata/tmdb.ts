@@ -66,12 +66,12 @@ export function formatTMDBMeta(
   return {
     title: media.title,
     id: media.id.toString(),
-    year: media.original_release_year?.toString(),
+    year: media.original_release_date?.getFullYear()?.toString(),
     poster: media.poster,
     type,
     seasons: seasons as any,
     seasonData: season
-      ? ({
+      ? {
           id: season.id.toString(),
           number: season.season_number,
           title: season.title,
@@ -81,8 +81,9 @@ export function formatTMDBMeta(
               id: v.id.toString(),
               number: v.episode_number,
               title: v.title,
+              air_date: v.air_date,
             })),
-        } as any)
+        }
       : (undefined as any),
   };
 }
@@ -93,7 +94,8 @@ export function formatTMDBMetaToMediaItem(media: TMDBMediaResult): MediaItem {
   return {
     title: media.title,
     id: media.id.toString(),
-    year: media.original_release_year ?? 0,
+    year: media.original_release_date?.getFullYear() ?? 0,
+    release_date: media.original_release_date,
     poster: media.poster,
     type,
   };
@@ -141,22 +143,43 @@ export function decodeTMDBId(
   };
 }
 
-const baseURL = "https://api.themoviedb.org/3";
+const tmdbBaseUrl1 = "https://api.themoviedb.org/3";
+const tmdbBaseUrl2 = "https://api.tmdb.org/3";
 
-const headers = {
+const apiKey = conf().TMDB_READ_API_KEY;
+
+const tmdbHeaders = {
   accept: "application/json",
-  Authorization: `Bearer ${conf().TMDB_READ_API_KEY}`,
+  Authorization: `Bearer ${apiKey}`,
 };
 
+function abortOnTimeout(timeout: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeout);
+  return controller.signal;
+}
+
 async function get<T>(url: string, params?: object): Promise<T> {
-  const res = await mwFetch<any>(encodeURI(url), {
-    headers,
-    baseURL,
-    params: {
-      ...params,
-    },
-  });
-  return res;
+  if (!apiKey) throw new Error("TMDB API key not set");
+  try {
+    return await mwFetch<T>(encodeURI(url), {
+      headers: tmdbHeaders,
+      baseURL: tmdbBaseUrl1,
+      params: {
+        ...params,
+      },
+      signal: abortOnTimeout(5000),
+    });
+  } catch (err) {
+    return mwFetch<T>(encodeURI(url), {
+      headers: tmdbHeaders,
+      baseURL: tmdbBaseUrl2,
+      params: {
+        ...params,
+      },
+      signal: abortOnTimeout(30000),
+    });
+  }
 }
 
 export async function multiSearch(
@@ -227,6 +250,7 @@ export async function getEpisodes(
     id: e.id,
     episode_number: e.episode_number,
     title: e.name,
+    air_date: e.air_date,
   }));
 }
 
@@ -254,7 +278,7 @@ export function formatTMDBSearchResult(
       title: show.name,
       poster: getMediaPoster(show.poster_path),
       id: show.id,
-      original_release_year: new Date(show.first_air_date).getFullYear(),
+      original_release_date: new Date(show.first_air_date),
       object_type: mediatype,
     };
   }
@@ -265,7 +289,7 @@ export function formatTMDBSearchResult(
     title: movie.title,
     poster: getMediaPoster(movie.poster_path),
     id: movie.id,
-    original_release_year: new Date(movie.release_date).getFullYear(),
+    original_release_date: new Date(movie.release_date),
     object_type: mediatype,
   };
 }
